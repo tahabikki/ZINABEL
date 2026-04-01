@@ -374,6 +374,36 @@ docker-compose down
 4. **Serve frontend via CDN or static server**
    - Upload `frontend/dist/` to Vercel, Netlify, or AWS S3
 
+### Deploying to Fly.io
+
+This project includes a Dockerfile and `fly.toml` template to deploy the backend to Fly.io.
+
+1. Install `flyctl`: https://fly.io/docs/hands-on/install-flyctl/
+2. Login and create an app (choose a unique name when prompted):
+
+```bash
+flyctl launch --name <your-app-name> --region <region>
+```
+
+3. Set any secrets or env vars (do NOT commit secrets to the repo):
+
+```bash
+flyctl secrets set SECRET_KEY=your_secret_here
+flyctl secrets set ONLINE_USERNAME=your_username
+flyctl secrets set ONLINE_PASSWORD=your_password
+```
+
+4. Deploy:
+
+```bash
+flyctl deploy
+```
+
+Notes:
+- `fly.toml` contains a minimal template; update `app` and `primary_region` as needed.
+- The Dockerfile runs Gunicorn on port `5000` so Fly's HTTP routing will work out of the box.
+- If you prefer a standalone Selenium service, create a separate Fly app for it and set `SELENIUM_REMOTE_URL` to its address.
+
 ---
 
 ## 🤝 Contributing

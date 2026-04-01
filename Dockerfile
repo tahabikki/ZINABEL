@@ -38,4 +38,5 @@ ENV PORT=5000
 
 EXPOSE 5000
 WORKDIR /app/backend
-CMD ["python", "run_app.py"]
+# Run Gunicorn in production (use WSGI entrypoint `backend/wsgi.py`)
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "wsgi:app"]

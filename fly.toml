@@ -1,0 +1,21 @@
+app = "zinabel"
+primary_region = "iad"
+
+[build]
+  # Use existing Dockerfile in repo root
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "5000"
+
+[[services]]
+  internal_port = 5000
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
