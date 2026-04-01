@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  backend:
+    build: .
+    image: zinabel:latest
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      PORT: ${PORT:-5000}
+      BRAVE_PATH: /usr/bin/chromium
+      CHROMEDRIVER_PATH: /usr/local/bin/chromedriver
+    volumes:
+      - zinabel_data:/app/database
+    restart: unless-stopped
+    shm_size: '1g'
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: zinabel-frontend:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: http://backend:5000
+      CHOKIDAR_USEPOLLING: "true"
+      BROWSER: "none"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  zinabel_data:

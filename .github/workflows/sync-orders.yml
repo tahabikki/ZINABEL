@@ -1,0 +1,110 @@
+name: 🔄 Sync Orders - Automated Daily
+
+# Trigger every 2 hours AND manual trigger
+on:
+  schedule:
+    # Every 2 hours (recommended for balanced sync)
+    - cron: '0 */2 * * *'
+    # Daily at 02:00 UTC (deep sync)
+    - cron: '0 2 * * *'
+  
+  # Manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to sync'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  sync-orders:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📋 Checkout code
+        uses: actions/checkout@v3
+      
+      - name: 🕐 Get current time
+        id: time
+        run: echo "timestamp=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+      
+      - name: 🔄 Trigger Sync Endpoint
+        id: sync
+        run: |
+          echo "Starting sync at: ${{ steps.time.outputs.timestamp }}"
+          
+          # Make request to sync endpoint
+          RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
+            "https://${{ secrets.VERCEL_DOMAIN }}/api/sync" \
+            -w "\n%{http_code}")
+          
+          # Extract HTTP status code (last line)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          echo "http_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+          echo "response=$BODY" >> $GITHUB_OUTPUT
+          
+          # Check if sync was successful
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Sync successful"
+            exit 0
+          else
+            echo "❌ Sync failed with status $HTTP_CODE"
+            exit 1
+          fi
+      
+      - name: 📊 Check Sync Status
+        id: status
+        run: |
+          echo "Getting sync status..."
+          STATUS=$(curl -s -X GET \
+            "https://${{ secrets.VERCEL_DOMAIN }}/api/sync/status" \
+            -w "\n%{http_code}")
+          
+          HTTP_CODE=$(echo "$STATUS" | tail -n1)
+          BODY=$(echo "$STATUS" | head -n-1)
+          
+          echo "Status Response: $BODY"
+          echo "status_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+      
+      - name: ✅ Success Notification
+        if: steps.sync.outputs.http_code == '200'
+        run: |
+          echo "🎉 Sync completed successfully!"
+          echo "Sync response: ${{ steps.sync.outputs.response }}"
+      
+      - name: ❌ Failure Notification
+        if: steps.sync.outputs.http_code != '200'
+        run: |
+          echo "⚠️ Sync encountered issues"
+          echo "HTTP Code: ${{ steps.sync.outputs.http_code }}"
+          echo "Response: ${{ steps.sync.outputs.response }}"
+          exit 1
+
+  # Optional: Send notification to Discord
+  notify-discord:
+    needs: sync-orders
+    runs-on: ubuntu-latest
+    if: always()  # Run even if sync fails
+    
+    steps:
+      - name: 📢 Notify Discord
+        uses: sarisia/actions-status-discord@v1
+        if: failure()
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          title: 'ZINABEL Sync Status'
+          description: |
+            Environment: Production
+            Sync Status: ${{ needs.sync-orders.result }}
+            Time: ${{ steps.time.outputs.timestamp }}

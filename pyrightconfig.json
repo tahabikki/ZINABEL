@@ -1,0 +1,13 @@
+{
+  "pythonVersion": "3.11",
+  "pythonPath": ".venv",
+  "include": [
+    "backend",
+    "scraper.py"
+  ],
+  "typeCheckingMode": "basic",
+  "extraPaths": [
+    "./backend",
+    "./backend/utils"
+  ]
+}
