@@ -105,9 +105,12 @@ def start_scheduler():
         sync_scheduler.start()
         logger.info("✅ Sync scheduler started - running every 2 minutes ⚡ (better filter detection + order sync)")
         
-        # Run first sync immediately
-        logger.info("🚀 Running initial sync...")
-        run_sync()
+        # Run first sync immediately ONLY if RUN_INITIAL_SYNC is enabled
+        if os.getenv('RUN_INITIAL_SYNC','false').lower() in ('1','true','yes'):
+            logger.info("🚀 Running initial sync...")
+            run_sync()
+        else:
+            logger.info("ℹ️  Skipping initial sync (RUN_INITIAL_SYNC not set). Sync will run on schedule.")
         
     except Exception as e:
         logger.error(f"❌ Failed to start scheduler: {str(e)}")

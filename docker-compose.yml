@@ -11,10 +11,13 @@ services:
       PORT: ${PORT:-5000}
       BROWSER_PATH: /usr/bin/chromium
       CHROMEDRIVER_PATH: /usr/local/bin/chromedriver
+      ENABLE_SCHEDULER: "true"
+      RUN_INITIAL_SYNC: "false"
     volumes:
       - zinabel_data:/app/database
     restart: unless-stopped
     shm_size: '1g'
+    command: gunicorn -w 1 --threads 4 --timeout 120 -b 0.0.0.0:5000 wsgi:app
 
   frontend:
     build:

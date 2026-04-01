@@ -90,17 +90,22 @@ def create_app(config_name='development'):
             'scheduler': scheduler_status
         }), 200
     
-    # Start background sync scheduler
+    # Start background sync scheduler (only if ENABLE_SCHEDULER=true)
     @app.before_request
     def startup():
-        """Initialize scheduler on first request"""
+        """Initialize scheduler on first request if enabled"""
         if not app.config.get('_SCHEDULER_STARTED'):
             try:
-                from sync_scheduler import start_scheduler
-                start_scheduler()
-                app.config['_SCHEDULER_STARTED'] = True
+                if os.getenv('ENABLE_SCHEDULER','false').lower() in ('1','true','yes'):
+                    from sync_scheduler import start_scheduler
+                    start_scheduler()
+                    app.config['_SCHEDULER_STARTED'] = True
+                    app.logger.info("✅ Scheduler ENABLED and started")
+                else:
+                    app.config['_SCHEDULER_STARTED'] = False
+                    app.logger.info("ℹ️  Scheduler DISABLED (set ENABLE_SCHEDULER=true to enable)")
             except Exception as e:
-                print(f"⚠️ Warning: Could not start scheduler: {str(e)}")
+                app.logger.warning(f"⚠️ Warning: Could not start scheduler: {str(e)}")
                 app.config['_SCHEDULER_STARTED'] = False
     
     # Graceful shutdown
