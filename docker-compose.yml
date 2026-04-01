@@ -9,7 +9,7 @@ services:
     env_file: .env
     environment:
       PORT: ${PORT:-5000}
-      BRAVE_PATH: /usr/bin/chromium
+      BROWSER_PATH: /usr/bin/chromium
       CHROMEDRIVER_PATH: /usr/local/bin/chromedriver
     volumes:
       - zinabel_data:/app/database
@@ -27,7 +27,10 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      VITE_API_URL: http://backend:5000
+      # Client-facing API URL (browser) - use relative path so browser requests go through the dev server
+      VITE_API_URL: /api
+      # Dev server proxy target (the dev server runs inside the container and should forward to backend)
+      VITE_PROXY_TARGET: http://backend:5000
       CHOKIDAR_USEPOLLING: "true"
       BROWSER: "none"
     depends_on:

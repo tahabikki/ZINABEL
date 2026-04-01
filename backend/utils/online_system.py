@@ -20,6 +20,7 @@ import time
 import os
 import logging
 import platform
+import shutil
 from selenium.webdriver import Chrome  # type: ignore
 from selenium.webdriver.common.by import By  # type: ignore
 from selenium.webdriver.chrome.service import Service  # type: ignore
@@ -29,10 +30,12 @@ from selenium.webdriver.chrome.options import Options  # type: ignore
 from webdriver_manager.chrome import ChromeDriverManager  # type: ignore
 
 # ===== CONFIG =====
-CHROMEDRIVER_PATH = os.getenv('CHROMEDRIVER_PATH', '')
-BRAVE_PATH = os.getenv('BRAVE_PATH', '')
+CHROMEDRIVER_PATH = os.getenv('CHROMEDRIVER_PATH', '')  # Only used if set in Docker env
 USERNAME = os.getenv('ONLINE_USERNAME', '')
 PASSWORD = os.getenv('ONLINE_PASSWORD', '')
+# Prefer explicit `BROWSER_PATH` env var (set in Docker/.env). Kept generic for any Chromium-like browser.
+BROWSER_PATH = os.getenv('BROWSER_PATH', '') or os.getenv('BRAVE_PATH', '')  # Backwards-compatible: accept old BRAVE_PATH env var
+SELENIUM_REMOTE_URL = os.getenv('SELENIUM_REMOTE_URL', '')
 
 # External system URLs - read from environment or use defaults
 ONLINE_SYSTEM_URL = os.getenv('ONLINE_SYSTEM_URL', 'https://onetechapp.ma/sageb2b/')
@@ -44,62 +47,89 @@ logger = logging.getLogger(__name__)
 
 
 def get_chromedriver_path():
-    """Smart ChromeDriver detection: local project files > env var > webdriver-manager"""
-    
-    # Priority 1: Specified via environment variable
+    """Get ChromeDriver path for Docker/Linux.
+
+    Priority:
+    1. `CHROMEDRIVER_PATH` env var (explicit)
+    2. Common install locations (/usr/local/bin, /usr/bin, /opt)
+    3. chromedriver in PATH
+    4. webdriver-manager auto-download as fallback
+    5. Final fallback: /usr/local/bin/chromedriver (may not exist)
+    """
+    # 1) Explicit env var
     if CHROMEDRIVER_PATH and os.path.exists(CHROMEDRIVER_PATH):
         logger.info(f"✅ Using CHROMEDRIVER_PATH: {CHROMEDRIVER_PATH}")
         return CHROMEDRIVER_PATH
-    
-    # Priority 2: Local project ChromeDriver (works for Windows and Docker/Linux)
-    system = platform.system()
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    
-    if system == "Windows":
-        local_driver = os.path.join(project_root, 'ChromDriver manager', 'chromedriver-win64', 'chromedriver.exe')
-    else:  # Linux/Docker
-        local_driver = os.path.join(project_root, 'ChromDriver manager', 'chromedriver-linux64', 'chromedriver')
-    
-    if os.path.exists(local_driver):
-        logger.info(f"✅ Using local ChromeDriver v146: {local_driver}")
-        return local_driver
-    
-    # Priority 3: Let webdriver-manager auto-download
-    logger.info("📥 Downloading ChromeDriver via webdriver-manager...")
+
+    # 2) Common locations
+    possible_paths = ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver", "/opt/chromium/chromedriver"]
+    for p in possible_paths:
+        if os.path.exists(p):
+            logger.info(f"✅ Found chromedriver at: {p}")
+            return p
+
+    # 3) In PATH
+    chromedriver_cmd = shutil.which("chromedriver")
+    if chromedriver_cmd:
+        logger.info(f"✅ Using chromedriver from PATH: {chromedriver_cmd}")
+        return chromedriver_cmd
+
+    # 4) Fallback: try webdriver-manager to download a matching driver
     try:
-        driver_path = ChromeDriverManager().install()
-        logger.info(f"✅ Downloaded ChromeDriver: {driver_path}")
-        return driver_path
+        path = ChromeDriverManager().install()
+        logger.info(f"✅ Downloaded chromedriver via webdriver-manager: {path}")
+        return path
     except Exception as e:
-        logger.error(f"❌ Could not get ChromeDriver: {e}")
-        raise
+        logger.warning(f"⚠ webdriver-manager download failed: {e}")
+
+    # 5) Final fallback
+    logger.info("⚠ Falling back to /usr/local/bin/chromedriver (may not exist)")
+    return "/usr/local/bin/chromedriver"
 
 
 def setup_driver():  # type: ignore
-    """Create and configure Selenium WebDriver - HEADLESS (no visible window)"""
+    """Create and configure Selenium WebDriver for Docker/Linux (headless, Chromium/Chrome).
+
+    Behavior:
+    - If `SELENIUM_REMOTE_URL` is set: use remote Selenium (standalone) container.
+    - Otherwise: use local browser + chromedriver (with webdriver-manager fallback).
+    """
     try:
         options = Options()
-        
-        if BRAVE_PATH:
-            options.binary_location = BRAVE_PATH
-            logger.info(f"🦁 Using Brave browser from: {BRAVE_PATH}")
-        
-        options.add_argument("--headless")  # Hide browser window
-        options.add_argument("--no-sandbox")  # Silent mode
-        options.add_argument("--disable-dev-shm-usage")  # Prevent memory issues
+        # Common options for both remote and local drivers
+        options.add_argument("--headless=new")  # Use new headless mode
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--window-size=1920,1080")
-        options.add_argument("--disable-blink-features=AutomationControlled")  # Hide automation
-        
-        logger.info("📥 Getting ChromeDriver v146...")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+
+        # 1) Remote Selenium server (preferred when configured)
+        if SELENIUM_REMOTE_URL:
+            logger.info(f"🧊 Using remote Selenium at {SELENIUM_REMOTE_URL}")
+            from selenium import webdriver  # type: ignore
+            driver = webdriver.Remote(command_executor=SELENIUM_REMOTE_URL, options=options)
+            logger.info("✅ Remote Chrome driver initialized successfully")
+            return driver
+
+        # 2) Local fallback: determine browser binary
+        if BROWSER_PATH and os.path.exists(BROWSER_PATH):
+            options.binary_location = BROWSER_PATH
+        elif os.path.exists("/usr/bin/chromium"):
+            options.binary_location = "/usr/bin/chromium"
+        elif os.path.exists("/usr/bin/google-chrome"):
+            options.binary_location = "/usr/bin/google-chrome"
+        else:
+            options.binary_location = BROWSER_PATH or "/usr/bin/chromium"
+
+        logger.info(f"🧊 Using browser binary: {options.binary_location}")
         chromedriver_path = get_chromedriver_path()
-        
         service = Service(chromedriver_path)
         driver = Chrome(service=service, options=options)  # type: ignore
         logger.info("✅ Chrome driver initialized successfully")
         return driver
     except Exception as e:
         logger.error(f"❌ ChromeDriver setup failed: {str(e)}")
-        logger.error("Make sure Brave is installed or ChromeDriver 146 is in project")
+        logger.error("Make sure Chromium/Chrome and matching ChromeDriver are installed in Docker, or set `SELENIUM_REMOTE_URL` to a Selenium container")
         raise
 
 

@@ -8,7 +8,8 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: process.env.VITE_API_URL || 'http://backend:5000',
+        // Proxy target for the dev server (container): keep separate from client-facing VITE_API_URL
+        target: process.env.VITE_PROXY_TARGET || 'http://backend:5000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/api')
       }
